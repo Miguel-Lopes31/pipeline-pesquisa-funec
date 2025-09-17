@@ -6,7 +6,7 @@ from mysql.connector import Error
 config = {
     "host": "localhost",     # Altere se necessário
     "user": "root",          # Seu usuário MySQL
-    "password": "123456.",   # Sua senha MySQL
+    "password": "123456",   # Sua senha MySQL
     "database": "pesquisa_funec"
 }
 

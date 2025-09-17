@@ -1,6 +1,6 @@
 import pandas as pd
 import unidecode
-import uuid   # <--- adicionado para gerar UUIDs
+import uuid   
 
 def processar_dados():
     # === CONFIGURAÇÕES INICIAIS ===
