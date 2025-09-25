@@ -2,3 +2,4 @@ pandas
 unidecode
 mysql-connector-python
 gspread
+psycopg2

@@ -1,65 +1,70 @@
+import os
 import pandas as pd
-import mysql.connector
-from mysql.connector import Error
+from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
+import unidecode
 
-# === Configuração do MySQL ===
-config = {
-    "host": "localhost",     # Altere se necessário
-    "user": "root",          # Seu usuário MySQL
-    "password": "123456",   # Sua senha MySQL
-    "database": "pesquisa_funec"
-}
+# ============================
+# CONFIGURAÇÕES DO BANCO
+# ============================
+USER = "postgres"       # usuário do PostgreSQL
+PASSWORD = "123456"     # senha do PostgreSQL
+HOST = "localhost"
+PORT = "5432"
+DB = "pesquisa_funec"
 
-try:
-    # === 1. Conectar ao banco ===
-    conn = mysql.connector.connect(**config)
-    cursor = conn.cursor()
-    print("✅ Conexão com o MySQL realizada com sucesso!")
+engine = create_engine(f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DB}")
 
-    # === 2. Ler o CSV tratado ===
-    df = pd.read_csv("dados_forms/respostas_tratadas_mysql.csv")
-    print(f"📂 CSV carregado com {len(df)} registros.")
-
-    # === 3. Preparar INSERT IGNORE ===
-    cols = df.columns.tolist()
-    placeholders = ", ".join(["%s"] * len(cols))
-    col_names = ", ".join([f"`{c}`" for c in cols])
-
-    sql = f"""
-        INSERT IGNORE INTO respostas ({col_names})
-        VALUES ({placeholders});
-    """
-
-    # === 4. Criar lista de valores ===
-    values_list = [
-        tuple(x if pd.notna(x) else None for x in row)
-        for _, row in df.iterrows()
+# ============================
+# FUNÇÃO PARA LIMPAR NOMES DE COLUNAS
+# ============================
+def limpar_colunas(colunas):
+    return [
+        unidecode.unidecode(c).strip().lower().replace(" ", "_").replace("-", "_")
+        for c in colunas
     ]
 
-    # === 5. Inserir em lote ===
-    cursor.executemany(sql, values_list)
+# ============================
+# IMPORTAÇÃO DOS CSV
+# ============================
+PASTA = "dados_forms"
 
-    # Contar quantos foram inseridos e quantos ignorados
-    novos_inseridos = cursor.rowcount
-    ignorados = len(df) - novos_inseridos
+for arquivo in os.listdir(PASTA):
+    if arquivo.endswith(".csv"):
+        caminho = os.path.join(PASTA, arquivo)
+        tabela = os.path.splitext(arquivo)[0]  # nome do arquivo sem .csv
 
-    # === 6. Confirmar ===
-    conn.commit()
-    print("✅ Importação concluída com sucesso!")
-    print(f"📥 Novos registros inseridos: {novos_inseridos}")
-    print(f"⚠️ Registros ignorados (duplicados): {ignorados}")
+        try:
+            print(f"📂 Importando {arquivo} para a tabela '{tabela}'...")
 
-    # === 7. Contar registros totais ===
-    cursor.execute("SELECT COUNT(*) FROM respostas;")
-    total_registros = cursor.fetchone()[0]
-    print(f"📊 Total de registros na tabela agora: {total_registros}")
+            # Ler CSV (UTF-8 com BOM se existir)
+            df = pd.read_csv(caminho, encoding="utf-8-sig")
 
-except Error as e:
-    print(f"❌ Erro de conexão ou execução: {e}")
+            # Limpar nomes de colunas
+            df.columns = limpar_colunas(df.columns)
 
-finally:
-    if 'cursor' in locals() and cursor:
-        cursor.close()
-    if 'conn' in locals() and conn and conn.is_connected():
-        conn.close()
-        print("🔌 Conexão com MySQL encerrada.")
+            print(f"  📝 {len(df)} registros carregados.")
+
+            # Escolha: "replace" para recriar a tabela / "append" para acumular
+            MODO = "replace"   # 🔄 troque para "append" se quiser acumular dados
+
+            # Enviar para o banco
+            df.to_sql(
+                tabela,
+                engine,
+                if_exists=MODO,
+                index=False,
+                method="multi",
+                chunksize=1000
+            )
+
+            print(f"✅ Tabela '{tabela}' importada com sucesso! (modo: {MODO})\n")
+
+        except UnicodeDecodeError as e:
+            print(f"❌ Erro de codificação em {arquivo}: {e}")
+        except SQLAlchemyError as e:
+            print(f"❌ Erro SQL na tabela {tabela}: {e}")
+        except Exception as e:
+            print(f"❌ Erro inesperado com {arquivo}: {e}")
+
+print("🎉 Todas as importações foram concluídas!")
